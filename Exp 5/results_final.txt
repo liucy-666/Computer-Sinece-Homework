@@ -1,0 +1,29 @@
+Final Predictor Test Report 
+Date: 2026/04/29 ÖÜÈý 23:33:52.81 
+-------------------------------------------------- 
+Trace: traces\LONG_MOBILE-1.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.0116
+Trace: traces\LONG_MOBILE-2.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.0258
+Trace: traces\LONG_MOBILE-3.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     7.0159
+Trace: traces\LONG_MOBILE-4.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.0045
+Trace: traces\SHORT_MOBILE-1.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.2788
+Trace: traces\SHORT_MOBILE-2.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.1584
+Trace: traces\SHORT_MOBILE-24.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.0007
+Trace: traces\SHORT_MOBILE-25.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.0020
+Trace: traces\SHORT_MOBILE-27.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.1585
+Trace: traces\SHORT_MOBILE-28.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.0088
+Trace: traces\SHORT_MOBILE-3.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.3475
+Trace: traces\SHORT_MOBILE-30.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.1273
+Trace: traces\SHORT_MOBILE-4.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     1.7551

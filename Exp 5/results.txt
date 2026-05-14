@@ -1,0 +1,6 @@
+ 
+-------------------------------- 
+Trace: traces\LONG_MOBILE-1.bt9.trace.gz 
+  MISPRED_PER_1K_INST         	 :     0.0116
+-------------------------------- 
+Trace: traces\LONG_MOBILE-2.bt9.trace.gz 

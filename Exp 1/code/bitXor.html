@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>bitXor 动画演示</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:30px;background:#f7f7f7}
+.card{background:white;padding:20px;margin:16px 0;border-radius:12px;box-shadow:0 2px 8px #00000015}
+.bit{width:26px;height:26px;display:inline-block;text-align:center;line-height:26px;margin:2px;border-radius:4px;color:white}
+.bit1{background:#22c55e}
+.bit0{background:#ef4444}
+input{padding:8px;width:70px;margin-right:8px}
+button{padding:8px 16px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer}
+.step{margin:10px 0}
+</style>
+</head>
+<body>
+<h1>bitXor(x,y) 动画演示</h1>
+<p>仅用 ~ & 实现异或：x^y = ~(~x&~y) & ~(x&y)</p>
+<div>
+x: <input id="x" value="4">
+y: <input id="y" value="5">
+<button onclick="draw()">运行动画</button>
+</div>
+<div id="container"></div>
+
+<script>
+function pad8(s){return s.padStart(8,'0').slice(-8)}
+function bitNode(c){return `<div class="bit bit${c}">${c}</div>`}
+function row(title,val){
+    const s=pad8((val&0xff).toString(2))
+    return `<div class="step"><h4>${title}</h4><div style="display:flex">${[...s].map(bitNode).join('')}</div><p>= ${val&0xff}</p></div>`
+}
+function draw(){
+    const x=parseInt(document.getElementById('x').value)||0
+    const y=parseInt(document.getElementById('y').value)||0
+    const nx=~x
+    const ny=~y
+    const a=nx&ny
+    const b=x&y
+    const res=~a & ~b
+    const html=`
+<div class="card">${row('x',x)}</div>
+<div class="card">${row('y',y)}</div>
+<div class="card">${row('~x',nx)}</div>
+<div class="card">${row('~y',ny)}</div>
+<div class="card">${row('~x & ~y',a)}</div>
+<div class="card">${row('x & y',b)}</div>
+<div class="card" style="border:2px solid #3b82f6">${row('结果 bitXor(x,y)',res)}</div>
+`
+    document.getElementById('container').innerHTML=html
+}
+draw()
+</script>
+</body>
+</html>

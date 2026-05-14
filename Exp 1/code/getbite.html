@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>getByte 动画演示</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:30px;background:#f7f7f7}
+.card{background:white;padding:20px;margin:16px 0;border-radius:12px;box-shadow:0 2px 8px #00000015}
+.byte{padding:10px;margin:8px 0;background:#eef2ff;border-radius:8px}
+input{padding:8px;width:140px;margin-right:8px}
+button{padding:8px 16px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>getByte(x, n) 动画演示</h1>
+<p>功能：取 x 的第 n 个字节（0~3），n=0最低字节，n=3最高字节</p>
+<div>
+x(hex): <input id="x" value="0x12345678">
+n: <input id="n" value="1">
+<button onclick="show()">演示</button>
+</div>
+<div id="res"></div>
+
+<script>
+function show(){
+    let x=parseInt(document.getElementById('x').value)||0
+    let n=parseInt(document.getElementById('n').value)||0
+    let shift=n*8
+    let byte=(x>>shift)&0xff
+    const h=('00000000'+x.toString(16)).slice(-8)
+    const bytes=[h.slice(6,8),h.slice(4,6),h.slice(2,4),h.slice(0,2)]
+    const html=`
+<div class="card">
+<h3>0x${h}</h3>
+<p>字节3: ${bytes[3]} | 字节2: ${bytes[2]} | 字节1: ${bytes[1]} | 字节0: ${bytes[0]}</p>
+</div>
+<div class="card">
+<p>右移 ${shift} 位 → 与 0xFF 取低8位</p>
+<h2>结果：byte ${n} = 0x${byte.toString(16).padStart(2,'0')}</h2>
+<p>二进制：${(byte>>>0).toString(2).padStart(8,'0')}</p>
+</div>`
+    document.getElementById('res').innerHTML=html
+}
+show()
+</script>
+</body>
+</html>
