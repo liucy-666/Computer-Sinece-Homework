@@ -48,245 +48,499 @@
 	直接映射Data Cache，16KB大小
 	每行存放64个字节，共256行
 */
-#define DCACHE_SIZE						16384
-#define DCACHE_DATA_PER_LINE			64									// 必须是8字节的倍数
-#define DCACHE_DATA_PER_LINE_ADDR_BITS	GET_POWER_OF_2(DCACHE_DATA_PER_LINE)	// 必须与上面设置一致，即64字节，需要6位地址
-#define DCACHE_SET						(DCACHE_SIZE/DCACHE_DATA_PER_LINE)
-#define DCACHE_SET_ADDR_BITS			GET_POWER_OF_2(DCACHE_SET)				// 必须与上面设置一致，即256行，需要8位地址
+/*
+    4-Way Set Associative Data Cache
+*/
 
-// Cache行的结构，包括Valid、Tag和Data。你所有的状态信息，只能记录在Cache行中！
+#define DCACHE_SIZE                     16384
+#define DCACHE_DATA_PER_LINE            64
+#define DCACHE_DATA_PER_LINE_ADDR_BITS  GET_POWER_OF_2(DCACHE_DATA_PER_LINE)
+
+#define DCACHE_WAY                      4
+
+#define DCACHE_SET \
+    (DCACHE_SIZE / DCACHE_DATA_PER_LINE / DCACHE_WAY)
+
+#define DCACHE_SET_ADDR_BITS \
+    GET_POWER_OF_2(DCACHE_SET)
+
 struct DCACHE_LineStruct
 {
-	UINT8	Valid;
-	UINT64	Tag;
-	UINT8	Dirty; //加入dirty字段
-	UINT8	Data[DCACHE_DATA_PER_LINE];
-}DCache[DCACHE_SET];
+    UINT8  Valid;
+
+    UINT8  Dirty;
+
+    UINT64 Tag;
+
+    UINT32 LRU;
+
+    UINT8  Data[DCACHE_DATA_PER_LINE];
+
+} DCache[DCACHE_SET][DCACHE_WAY];
+
 
 /*
-	DCache初始化代码，一般需要把DCache的有效位Valid设置为0
-	模拟器启动时，会调用此InitDataCache函数
+    Init
 */
+
 void InitDataCache()
 {
-	UINT32 i;
-	printf("[%s] +-----------------------------------+\n", __func__);
-	printf("[%s] |   牢大的Data Cache初始化ing.... |\n", __func__);
-	printf("[%s] +-----------------------------------+\n", __func__);
-	for (i = 0; i < DCACHE_SET; i++)
-		DCache[i].Valid = 0;
-		DCache[i].Dirty = 0;
+    UINT32 set;
+    UINT32 way;
+
+    printf("[%s] +-----------------------------------+\n", __func__);
+    printf("[%s] |      4-Way Data Cache Init        |\n", __func__);
+    printf("[%s] +-----------------------------------+\n", __func__);
+
+    for (set = 0; set < DCACHE_SET; set++)
+    {
+        for (way = 0; way < DCACHE_WAY; way++)
+        {
+            DCache[set][way].Valid = 0;
+
+            DCache[set][way].Dirty = 0;
+
+            DCache[set][way].LRU = way;
+        }
+    }
 }
 
+
 /*
-	从Memory中读入一行数据到Data Cache中
+    Update LRU
 */
-void LoadDataCacheLineFromMemory(UINT64 Address, UINT32 CacheLineAddress)
+
+void UpdateLRU(UINT32 set, UINT32 hitway)
 {
-	// 一次性从Memory中将DCACHE_DATA_PER_LINE数据读入某个Data Cache行
-	// 提供了一个函数，一次可以读入8个字节
-	UINT32 i;
-	UINT64 ReadData;
-	UINT64 AlignAddress;
-	UINT64* pp;
+    UINT32 old =
+        DCache[set][hitway].LRU;
 
-	AlignAddress = Address & ~(DCACHE_DATA_PER_LINE - 1);	// 地址必须对齐到DCACHE_DATA_PER_LINE (64)字节边界
-	pp = (UINT64*)DCache[CacheLineAddress].Data;
-	for (i = 0; i < DCACHE_DATA_PER_LINE / 8; i++)
-	{
-		ReadData = ReadMemory(AlignAddress + 8LL * i);
-		if (DEBUG)
-			printf("[%s] Address=%016llX ReadData=%016llX\n", __func__, AlignAddress + 8LL * i, ReadData);
-		pp[i] = ReadData;
-	}
+    for (UINT32 way = 0; way < DCACHE_WAY; way++)
+    {
+        if (DCache[set][way].Valid &&
+            DCache[set][way].LRU < old)
+        {
+            DCache[set][way].LRU++;
+        }
+    }
 
+    DCache[set][hitway].LRU = 0;
 }
 
-/*
-	将Data Cache中的一行数据，写入存储器
-*/
-void StoreDataCacheLineToMemory(UINT64 Address, UINT32 CacheLineAddress)
-{
-	// 一次性将DCACHE_DATA_PER_LINE数据从某个Data Cache行写入Memory中
-	// 提供了一个函数，一次可以写入8个字节
-	UINT32 i;
-	UINT64 WriteData;
-	UINT64 AlignAddress;
-	UINT64* pp;
 
-	AlignAddress = Address & ~(DCACHE_DATA_PER_LINE - 1);	// 地址必须对齐到DCACHE_DATA_PER_LINE (64)字节边界
-	pp = (UINT64*)DCache[CacheLineAddress].Data;
-	WriteData = 0;
-	for (i = 0; i < DCACHE_DATA_PER_LINE / 8; i++)
-	{
-		WriteData = pp[i];
-		WriteMemory(AlignAddress + 8LL * i, WriteData);
-		if (DEBUG)
-			printf("[%s] Address=%016llX ReadData=%016llX\n", __func__, AlignAddress + 8LL * i, WriteData);
-	}
+/*
+    Find victim
+*/
+
+UINT32 FindVictimWay(UINT32 set)
+{
+    /*
+        invalid first
+    */
+
+    for (UINT32 way = 0; way < DCACHE_WAY; way++)
+    {
+        if (DCache[set][way].Valid == 0)
+        {
+            return way;
+        }
+    }
+
+    /*
+        LRU replace
+    */
+
+    UINT32 victim = 0;
+
+    for (UINT32 way = 1; way < DCACHE_WAY; way++)
+    {
+        if (DCache[set][way].LRU >
+            DCache[set][victim].LRU)
+        {
+            victim = way;
+        }
+    }
+
+    return victim;
 }
 
+
 /*
-	Data Cache访问接口，系统模拟器会调用此接口，来实现对你的Data Cache访问
-	Address:	访存字节地址
-	Operation:	操作：读操作（'L'）、写操作（'S'）、读-修改-写操作（'M'）
-	DataSize:	数据大小：1字节、2字节、4字节、8字节
-	StoreValue:	当执行写操作的时候，需要写入的数据
-	LoadResult:	当执行读操作的时候，从Cache读出的数据
+    Load line from memory
 */
-UINT8 AccessDataCache(UINT64 Address, UINT8 Operation, UINT8 DataSize, UINT64 StoreValue, UINT64* LoadResult)
+
+void LoadDataCacheLineFromMemory(
+    UINT64 Address,
+    UINT32 Set,
+    UINT32 Way
+)
 {
-	UINT32 CacheLineAddress;
-	UINT8 BlockOffset;
-	UINT64 AddressTag;
-	UINT8 MissFlag = 'M';
-	UINT64 ReadValue;
+    UINT64 AlignAddress;
 
-	*LoadResult = 0;
+    UINT64* pp;
 
-	/*
-	*	直接映射中，Address被切分为  AddressTag，CacheLineAddress，BlockOffset
-	*/
+    AlignAddress =
+        Address &
+        ~(DCACHE_DATA_PER_LINE - 1);
 
-	// CacheLineAddress Cache的行号，在直接映射中，就是组号（每组1行）
-	CacheLineAddress = (Address >> DCACHE_DATA_PER_LINE_ADDR_BITS) % DCACHE_SET;
-	BlockOffset = Address % DCACHE_DATA_PER_LINE;
-	AddressTag = (Address >> DCACHE_DATA_PER_LINE_ADDR_BITS) >> DCACHE_SET_ADDR_BITS;	// 地址去掉DCACHE_SET、DCACHE_DATA_PER_LINE，剩下的作为Tag。警告！不能将整个地址作为Tag！！
+    pp =
+        (UINT64*)DCache[Set][Way].Data;
 
-	if (DCache[CacheLineAddress].Valid == 1 && DCache[CacheLineAddress].Tag == AddressTag)
-	{
-		MissFlag = 'H';		// 命中！
+    for (UINT32 i = 0;
+        i < DCACHE_DATA_PER_LINE / 8;
+        i++)
+    {
+        pp[i] =
+            ReadMemory(
+                AlignAddress + 8LL * i
+            );
+    }
+}
 
-		if (Operation == 'L')	// 读操作
-		{
-			ReadValue = 0;
-			switch (DataSize)
-			{
-			case 1:	// 1个字节
-				ReadValue = DCache[CacheLineAddress].Data[BlockOffset + 0];
-				break;
-			case 2:	// 2个字节
-				BlockOffset = BlockOffset & 0xFE;	// 需对齐到2字节边界
-				ReadValue = DCache[CacheLineAddress].Data[BlockOffset + 1]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 0];
-				break;
-			case 4:	// 4个字节
-				BlockOffset = BlockOffset & 0xFC;	// 需对齐到4字节边界
-				ReadValue = DCache[CacheLineAddress].Data[BlockOffset + 3]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 2]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 1]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 0];
-				break;
-			case 8:	// 8个字节
-				BlockOffset = BlockOffset & 0xF8;	// 需对齐到8字节边界
-				ReadValue = DCache[CacheLineAddress].Data[BlockOffset + 7]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 6]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 5]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 4]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 3]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 2]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 1]; ReadValue = ReadValue << 8;
-				ReadValue |= DCache[CacheLineAddress].Data[BlockOffset + 0];
-				break;
-			}
-			*LoadResult = ReadValue;
-			if (DEBUG)
-				printf("[%s] Address=%016llX Operation=%c DataSize=%u StoreValue=%016llX ReadValue=%016llX\n", __func__, Address, Operation, DataSize, StoreValue, ReadValue);
-		}
-		else if (Operation == 'S' || Operation == 'M')	// 写操作（修改操作在此等价于写操作）
-		{
-			if (DEBUG)
-				printf("[%s] Address=%016llX Operation=%c DataSize=%u StoreValue=%016llX\n", __func__, Address, Operation, DataSize, StoreValue);
-			switch (DataSize)
-			{
-			case 1:	// 1个字节
-				DCache[CacheLineAddress].Data[BlockOffset + 0] = StoreValue & 0xFF;
-				break;
-			case 2:	// 2个字节
-				BlockOffset = BlockOffset & 0xFE;	// 需对齐到2字节边界
-				DCache[CacheLineAddress].Data[BlockOffset + 0] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 1] = StoreValue & 0xFF;
-				break;
-			case 4:	// 4个字节
-				BlockOffset = BlockOffset & 0xFC;	// 需对齐到4字节边界
-				DCache[CacheLineAddress].Data[BlockOffset + 0] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 1] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 2] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 3] = StoreValue & 0xFF;
-				break;
-			case 8:	// 8个字节
-				BlockOffset = BlockOffset & 0xF8;	// 需对齐到8字节边界
-				DCache[CacheLineAddress].Data[BlockOffset + 0] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 1] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 2] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 3] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 4] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 5] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 6] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 7] = StoreValue & 0xFF;
-				break;
-			}
-			DCache[CacheLineAddress].Dirty = 1;
-		}
-	}
-	else
-	{
-		if (DEBUG)
-			printf("[%s] Address=%016llX Operation=%c DataSize=%u StoreValue=%016llX\n", __func__, Address, Operation, DataSize, StoreValue);
-		MissFlag = 'M';		// 不命中
-		if (DCache[CacheLineAddress].Valid == 1&&DCache[CacheLineAddress].Dirty == 1)
-		{
-			// 淘汰对应的Cache行，如果对应的Cache行有数据，需要写回到Memory中
-			UINT64 OldAddress;
-			// OldAddress = > (Tag,Set,0000)
-			OldAddress = ((DCache[CacheLineAddress].Tag << DCACHE_SET_ADDR_BITS) << DCACHE_DATA_PER_LINE_ADDR_BITS) | ((UINT64)CacheLineAddress << DCACHE_DATA_PER_LINE_ADDR_BITS);	// 从Tag中恢复旧的地址
-			StoreDataCacheLineToMemory(OldAddress, CacheLineAddress);
-		}
-		// 需要从Memory中读入新的行（真实情况下，这个LoadCacheLineFromMemory需要很长时间的）
-		LoadDataCacheLineFromMemory(Address, CacheLineAddress);
-		DCache[CacheLineAddress].Valid = 1;
-		DCache[CacheLineAddress].Dirty = 0;
-		DCache[CacheLineAddress].Tag = AddressTag;
-		if (Operation == 'L')	// 读操作
-		{
-			// 读操作不需要做事情，因为已经MISS了
-		}
-		else if (Operation == 'S' || Operation == 'M')	// 写操作（修改操作在此等价于写操作）
-		{
-			// 写操作，需要将新的StoreValue更新到CacheLine中
-			switch (DataSize)
-			{
-			case 1:	// 1个字节
-				DCache[CacheLineAddress].Data[BlockOffset + 0] = StoreValue & 0xFF;
-				break;
-			case 2:	// 2个字节
-				BlockOffset = BlockOffset & 0xFE;	// 需对齐到2字节边界
-				DCache[CacheLineAddress].Data[BlockOffset + 0] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 1] = StoreValue & 0xFF;
-				break;
-			case 4:	// 4个字节
-				BlockOffset = BlockOffset & 0xFC;	// 需对齐到4字节边界
-				DCache[CacheLineAddress].Data[BlockOffset + 0] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 1] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 2] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 3] = StoreValue & 0xFF;
-				break;
-			case 8:	// 8个字节
-				BlockOffset = BlockOffset & 0xF8;	// 需对齐到8字节边界
-				DCache[CacheLineAddress].Data[BlockOffset + 0] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 1] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 2] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 3] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 4] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 5] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 6] = StoreValue & 0xFF; StoreValue = StoreValue >> 8;
-				DCache[CacheLineAddress].Data[BlockOffset + 7] = StoreValue & 0xFF;
-				break;
-			}
-			DCache[CacheLineAddress].Dirty = 1;
-		}
-	}
-	return MissFlag;
+
+/*
+    Write back
+*/
+
+void StoreDataCacheLineToMemory(
+    UINT64 Address,
+    UINT32 Set,
+    UINT32 Way
+)
+{
+    UINT64 AlignAddress;
+
+    UINT64* pp;
+
+    AlignAddress =
+        Address &
+        ~(DCACHE_DATA_PER_LINE - 1);
+
+    pp =
+        (UINT64*)DCache[Set][Way].Data;
+
+    for (UINT32 i = 0;
+        i < DCACHE_DATA_PER_LINE / 8;
+        i++)
+    {
+        WriteMemory(
+            AlignAddress + 8LL * i,
+            pp[i]
+        );
+    }
+}
+
+
+/*
+    Access Data Cache
+*/
+
+UINT8 AccessDataCache(
+    UINT64 Address,
+    UINT8 Operation,
+    UINT8 DataSize,
+    UINT64 StoreValue,
+    UINT64* LoadResult
+)
+{
+    UINT32 Set;
+
+    UINT8 BlockOffset;
+
+    UINT64 Tag;
+
+    UINT64 ReadValue = 0;
+
+    UINT8 MissFlag = 'M';
+
+    *LoadResult = 0;
+
+    /*
+        Address split
+    */
+
+    Set =
+        (Address >> DCACHE_DATA_PER_LINE_ADDR_BITS)
+        % DCACHE_SET;
+
+    BlockOffset =
+        Address % DCACHE_DATA_PER_LINE;
+
+    Tag =
+        (Address >> DCACHE_DATA_PER_LINE_ADDR_BITS)
+        >> DCACHE_SET_ADDR_BITS;
+
+    /*
+        Search hit
+    */
+
+    UINT32 HitWay = 0xFFFFFFFF;
+
+    for (UINT32 way = 0; way < DCACHE_WAY; way++)
+    {
+        if (DCache[Set][way].Valid &&
+            DCache[Set][way].Tag == Tag)
+        {
+            HitWay = way;
+
+            MissFlag = 'H';
+
+            break;
+        }
+    }
+
+    /*
+        HIT
+    */
+
+    if (HitWay != 0xFFFFFFFF)
+    {
+        UpdateLRU(Set, HitWay);
+
+        if (Operation == 'L')
+        {
+            switch (DataSize)
+            {
+            case 1:
+
+                ReadValue =
+                    DCache[Set][HitWay]
+                    .Data[BlockOffset];
+
+                break;
+
+            case 2:
+
+                BlockOffset &= 0xFE;
+
+                for (int i = 1; i >= 0; i--)
+                {
+                    ReadValue <<= 8;
+
+                    ReadValue |=
+                        DCache[Set][HitWay]
+                        .Data[BlockOffset + i];
+                }
+
+                break;
+
+            case 4:
+
+                BlockOffset &= 0xFC;
+
+                for (int i = 3; i >= 0; i--)
+                {
+                    ReadValue <<= 8;
+
+                    ReadValue |=
+                        DCache[Set][HitWay]
+                        .Data[BlockOffset + i];
+                }
+
+                break;
+
+            case 8:
+
+                BlockOffset &= 0xF8;
+
+                for (int i = 7; i >= 0; i--)
+                {
+                    ReadValue <<= 8;
+
+                    ReadValue |=
+                        DCache[Set][HitWay]
+                        .Data[BlockOffset + i];
+                }
+
+                break;
+            }
+
+            *LoadResult = ReadValue;
+        }
+        else
+        {
+            switch (DataSize)
+            {
+            case 1:
+
+                DCache[Set][HitWay]
+                    .Data[BlockOffset]
+                    = StoreValue & 0xFF;
+
+                break;
+
+            case 2:
+
+                BlockOffset &= 0xFE;
+
+                for (int i = 0; i < 2; i++)
+                {
+                    DCache[Set][HitWay]
+                        .Data[BlockOffset + i]
+                        = StoreValue & 0xFF;
+
+                    StoreValue >>= 8;
+                }
+
+                break;
+
+            case 4:
+
+                BlockOffset &= 0xFC;
+
+                for (int i = 0; i < 4; i++)
+                {
+                    DCache[Set][HitWay]
+                        .Data[BlockOffset + i]
+                        = StoreValue & 0xFF;
+
+                    StoreValue >>= 8;
+                }
+
+                break;
+
+            case 8:
+
+                BlockOffset &= 0xF8;
+
+                for (int i = 0; i < 8; i++)
+                {
+                    DCache[Set][HitWay]
+                        .Data[BlockOffset + i]
+                        = StoreValue & 0xFF;
+
+                    StoreValue >>= 8;
+                }
+
+                break;
+            }
+
+            DCache[Set][HitWay].Dirty = 1;
+        }
+
+        return MissFlag;
+    }
+
+    /*
+        MISS
+    */
+
+    UINT32 VictimWay =
+        FindVictimWay(Set);
+
+    /*
+        Write back if dirty
+    */
+
+    if (DCache[Set][VictimWay].Valid &&
+        DCache[Set][VictimWay].Dirty)
+    {
+        UINT64 OldAddress;
+
+        OldAddress =
+            (
+                (DCache[Set][VictimWay].Tag
+                << DCACHE_SET_ADDR_BITS)
+                << DCACHE_DATA_PER_LINE_ADDR_BITS
+            )
+            |
+            (
+                (UINT64)Set
+                << DCACHE_DATA_PER_LINE_ADDR_BITS
+            );
+
+        StoreDataCacheLineToMemory(
+            OldAddress,
+            Set,
+            VictimWay
+        );
+    }
+
+    /*
+        Load new line
+    */
+
+    LoadDataCacheLineFromMemory(
+        Address,
+        Set,
+        VictimWay
+    );
+
+    DCache[Set][VictimWay].Valid = 1;
+
+    DCache[Set][VictimWay].Dirty = 0;
+
+    DCache[Set][VictimWay].Tag = Tag;
+
+    UpdateLRU(Set, VictimWay);
+
+    /*
+        Store after miss
+    */
+
+    if (Operation == 'S' ||
+        Operation == 'M')
+    {
+        switch (DataSize)
+        {
+        case 1:
+
+            DCache[Set][VictimWay]
+                .Data[BlockOffset]
+                = StoreValue & 0xFF;
+
+            break;
+
+        case 2:
+
+            BlockOffset &= 0xFE;
+
+            for (int i = 0; i < 2; i++)
+            {
+                DCache[Set][VictimWay]
+                    .Data[BlockOffset + i]
+                    = StoreValue & 0xFF;
+
+                StoreValue >>= 8;
+            }
+
+            break;
+
+        case 4:
+
+            BlockOffset &= 0xFC;
+
+            for (int i = 0; i < 4; i++)
+            {
+                DCache[Set][VictimWay]
+                    .Data[BlockOffset + i]
+                    = StoreValue & 0xFF;
+
+                StoreValue >>= 8;
+            }
+
+            break;
+
+        case 8:
+
+            BlockOffset &= 0xF8;
+
+            for (int i = 0; i < 8; i++)
+            {
+                DCache[Set][VictimWay]
+                    .Data[BlockOffset + i]
+                    = StoreValue & 0xFF;
+
+                StoreValue >>= 8;
+            }
+
+            break;
+        }
+
+        DCache[Set][VictimWay].Dirty = 1;
+    }
+
+    return MissFlag;
 }
 
 /* 指令Cache实现部分，可选实现 */
