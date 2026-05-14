@@ -49,7 +49,7 @@
 	每行存放64个字节，共256行
 */
 #define DCACHE_SIZE						16384
-#define DCACHE_DATA_PER_LINE			16									// 必须是8字节的倍数
+#define DCACHE_DATA_PER_LINE			64									// 必须是8字节的倍数
 #define DCACHE_DATA_PER_LINE_ADDR_BITS	GET_POWER_OF_2(DCACHE_DATA_PER_LINE)	// 必须与上面设置一致，即64字节，需要6位地址
 #define DCACHE_SET						(DCACHE_SIZE/DCACHE_DATA_PER_LINE)
 #define DCACHE_SET_ADDR_BITS			GET_POWER_OF_2(DCACHE_SET)				// 必须与上面设置一致，即256行，需要8位地址
@@ -59,6 +59,7 @@ struct DCACHE_LineStruct
 {
 	UINT8	Valid;
 	UINT64	Tag;
+	UINT8	Dirty; //加入dirty字段
 	UINT8	Data[DCACHE_DATA_PER_LINE];
 }DCache[DCACHE_SET];
 
@@ -70,10 +71,11 @@ void InitDataCache()
 {
 	UINT32 i;
 	printf("[%s] +-----------------------------------+\n", __func__);
-	printf("[%s] |   威震天的Data Cache初始化ing.... |\n", __func__);
+	printf("[%s] |   牢大的Data Cache初始化ing.... |\n", __func__);
 	printf("[%s] +-----------------------------------+\n", __func__);
 	for (i = 0; i < DCACHE_SET; i++)
 		DCache[i].Valid = 0;
+		DCache[i].Dirty = 0;
 }
 
 /*
@@ -224,6 +226,7 @@ UINT8 AccessDataCache(UINT64 Address, UINT8 Operation, UINT8 DataSize, UINT64 St
 				DCache[CacheLineAddress].Data[BlockOffset + 7] = StoreValue & 0xFF;
 				break;
 			}
+			DCache[CacheLineAddress].Dirty = 1;
 		}
 	}
 	else
@@ -231,7 +234,7 @@ UINT8 AccessDataCache(UINT64 Address, UINT8 Operation, UINT8 DataSize, UINT64 St
 		if (DEBUG)
 			printf("[%s] Address=%016llX Operation=%c DataSize=%u StoreValue=%016llX\n", __func__, Address, Operation, DataSize, StoreValue);
 		MissFlag = 'M';		// 不命中
-		if (DCache[CacheLineAddress].Valid == 1)
+		if (DCache[CacheLineAddress].Valid == 1&&DCache[CacheLineAddress].Dirty == 1)
 		{
 			// 淘汰对应的Cache行，如果对应的Cache行有数据，需要写回到Memory中
 			UINT64 OldAddress;
@@ -242,6 +245,7 @@ UINT8 AccessDataCache(UINT64 Address, UINT8 Operation, UINT8 DataSize, UINT64 St
 		// 需要从Memory中读入新的行（真实情况下，这个LoadCacheLineFromMemory需要很长时间的）
 		LoadDataCacheLineFromMemory(Address, CacheLineAddress);
 		DCache[CacheLineAddress].Valid = 1;
+		DCache[CacheLineAddress].Dirty = 0;
 		DCache[CacheLineAddress].Tag = AddressTag;
 		if (Operation == 'L')	// 读操作
 		{
@@ -279,24 +283,179 @@ UINT8 AccessDataCache(UINT64 Address, UINT8 Operation, UINT8 DataSize, UINT64 St
 				DCache[CacheLineAddress].Data[BlockOffset + 7] = StoreValue & 0xFF;
 				break;
 			}
+			DCache[CacheLineAddress].Dirty = 1;
 		}
 	}
 	return MissFlag;
 }
 
 /* 指令Cache实现部分，可选实现 */
+#define ICACHE_SIZE						16384
+#define ICACHE_DATA_PER_LINE			64
+#define ICACHE_DATA_PER_LINE_ADDR_BITS	GET_POWER_OF_2(ICACHE_DATA_PER_LINE)
+
+#define ICACHE_SET						(ICACHE_SIZE / ICACHE_DATA_PER_LINE)
+#define ICACHE_SET_ADDR_BITS			GET_POWER_OF_2(ICACHE_SET)
+
+struct ICACHE_LineStruct
+{
+	UINT8	Valid;
+
+	UINT64	Tag;
+
+	UINT8	Data[ICACHE_DATA_PER_LINE];
+
+} ICache[ICACHE_SET];
+
 void InitInstCache(void)
 {
-	return;
+	UINT32 i;
+
+	for (i = 0; i < ICACHE_SET; i++)
+	{
+		ICache[i].Valid = 0;
+	}
 }
 
-void LoadInstCacheLineFromMemory(UINT64 Address, UINT32 CacheLineAddress)
+void LoadInstCacheLineFromMemory(UINT64 Address,UINT32 CacheLineAddress)
 {
-	return;
+	UINT32 i;
+
+	UINT64 AlignAddress;
+
+	UINT64* pp;
+
+	AlignAddress =
+		Address &
+		~(ICACHE_DATA_PER_LINE - 1);
+
+	pp = (UINT64*)ICache[CacheLineAddress].Data;
+
+	for (i = 0;
+		i < ICACHE_DATA_PER_LINE / 8;
+		i++)
+	{
+		pp[i] =
+			ReadMemory(
+				AlignAddress + i * 8LL
+			);
+	}
 }
 
-UINT8 AccessInstCache(UINT64 Address, UINT8 Operation, UINT8 InstSize, UINT64* InstResult)
+
+UINT8 AccessInstCache(
+	UINT64 Address,
+	UINT8 Operation,
+	UINT8 InstSize,
+	UINT64* InstResult
+)
 {
-	// 返回值'M' = Miss，'H'=Hit
-	return 'M';
+	UINT32 CacheLineAddress;
+
+	UINT8 BlockOffset;
+
+	UINT64 AddressTag;
+
+	UINT64 ReadValue = 0;
+
+	UINT8 MissFlag = 'M';
+
+	CacheLineAddress =
+		(Address >> ICACHE_DATA_PER_LINE_ADDR_BITS)
+		% ICACHE_SET;
+
+	BlockOffset =
+		Address % ICACHE_DATA_PER_LINE;
+
+	AddressTag =
+		(Address >> ICACHE_DATA_PER_LINE_ADDR_BITS)
+		>> ICACHE_SET_ADDR_BITS;
+
+	/*
+		Check Hit
+	*/
+
+	if (ICache[CacheLineAddress].Valid &&
+		ICache[CacheLineAddress].Tag == AddressTag)
+	{
+		MissFlag = 'H';
+	}
+	else
+	{
+		MissFlag = 'M';
+
+		LoadInstCacheLineFromMemory(
+			Address,
+			CacheLineAddress
+		);
+
+		ICache[CacheLineAddress].Valid = 1;
+
+		ICache[CacheLineAddress].Tag = AddressTag;
+	}
+
+	/*
+		Read instruction
+	*/
+
+	switch (InstSize)
+	{
+	case 1:
+
+		ReadValue =
+			ICache[CacheLineAddress]
+			.Data[BlockOffset];
+
+		break;
+
+	case 2:
+
+		BlockOffset &= 0xFE;
+
+		ReadValue =
+			ICache[CacheLineAddress]
+			.Data[BlockOffset + 1];
+
+		ReadValue <<= 8;
+
+		ReadValue |=
+			ICache[CacheLineAddress]
+			.Data[BlockOffset + 0];
+
+		break;
+
+	case 4:
+
+		BlockOffset &= 0xFC;
+
+		for (int i = 3; i >= 0; i--)
+		{
+			ReadValue <<= 8;
+
+			ReadValue |=
+				ICache[CacheLineAddress]
+				.Data[BlockOffset + i];
+		}
+
+		break;
+
+	case 8:
+
+		BlockOffset &= 0xF8;
+
+		for (int i = 7; i >= 0; i--)
+		{
+			ReadValue <<= 8;
+
+			ReadValue |=
+				ICache[CacheLineAddress]
+				.Data[BlockOffset + i];
+		}
+
+		break;
+	}
+
+	*InstResult = ReadValue;
+
+	return MissFlag;
 }
