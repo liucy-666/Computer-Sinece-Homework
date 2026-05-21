@@ -172,7 +172,7 @@ n_layer = 1
 n_embd = 16     
 block_size = 16 
 n_head = 4      
-head_dim = n_embd // n_head 
+head_dim = n_embd // n_head
 
 matrix = lambda nout, nin, std=0.08: Tensor(np.random.randn(nout, nin) * std)
 state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
