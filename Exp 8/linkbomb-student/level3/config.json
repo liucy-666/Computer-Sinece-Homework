@@ -1,0 +1,38 @@
+{
+  "name": "Level 3 - 数据陷阱 (Data Trap)",
+  "desc": "全局符号 counter=63 的 PC-relative 引用被拒绝",
+  "score": 20,
+  "checks": [
+    {
+      "check": "elf_valid"
+    },
+    {
+      "check": "no_textrel"
+    },
+    {
+      "check": "func_test"
+    }
+  ],
+  "tests": [
+    {
+      "name": "next_val",
+      "args": [],
+      "expected": 63
+    },
+    {
+      "name": "next_val",
+      "args": [],
+      "expected": 64
+    },
+    {
+      "name": "next_val",
+      "args": [],
+      "expected": 65
+    },
+    {
+      "name": "next_val",
+      "args": [],
+      "expected": 66
+    }
+  ]
+}

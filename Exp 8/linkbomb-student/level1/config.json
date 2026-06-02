@@ -1,0 +1,47 @@
+{
+  "name": "Level 1 - 蒸汽时代 (Steam Age)",
+  "desc": "请将 bomb1.a 转换为 .so，通过算术函数测试",
+  "score": 10,
+  "checks": [
+    {
+      "check": "elf_valid"
+    },
+    {
+      "check": "func_test"
+    }
+  ],
+  "tests": [
+    {
+      "name": "add",
+      "args": [
+        8,
+        7
+      ],
+      "expected": 15
+    },
+    {
+      "name": "sub",
+      "args": [
+        3,
+        5
+      ],
+      "expected": -2
+    },
+    {
+      "name": "mul",
+      "args": [
+        13,
+        5
+      ],
+      "expected": 65
+    },
+    {
+      "name": "mod",
+      "args": [
+        13,
+        6
+      ],
+      "expected": 1
+    }
+  ]
+}
