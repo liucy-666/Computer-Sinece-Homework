@@ -1,0 +1,20 @@
+首先执行for i in $(seq -w 1 16); do echo -e "\n=== make test$i ==="; make test$i; done验证测试结果是否正确
+
+实现过程：
+从题目可以知道，其实就是让我们补全下面几个函数的代码：
+eval：解析并执行用户输入的命令行  
+builtin_cmd：识别并处理内置命令
+do_bgfg：实现后台bg和前台fg的具体逻辑 
+waitfg：等待前台作业执行完毕
+sigchld_handler：处理 SIGCHLD 信号，负责回收终止的子进程
+sigint_handler：处理 SIGINT 信号，响应用户输入 ctrl-c 并终止前台作业
+sigtstp_handler：处理 SIGTSTP 信号，响应用户输入 ctrl-z 并暂停前台作业
+实现过程：
+
+Eval:先解析用户的指令，然后创建子进程执行指令。这里注意在创建子进程前要阻塞SIGCHLD信号，创建子进程后要即使解除，这是由于防止sigchld过快导致删掉了不存在的进程
+builtin_cmd:该函数用于拦截特定的保留字，让 Shell 直接在当前进程中处理，而不去 fork 新进程
+do_bgfg:负责处理 bg 和 fg 命令，实现暂停作业的唤醒以及前后台状态的切换m使用 kill(-(job->pid), SIGCONT) 向该作业的“整个进程组”（负号的作用）发送继续执行信号，唤醒被暂停的进程
+waitfg:通过循环检测，迫使 Shell 父进程挂起，直到前台作业放弃前台控制权(执行完毕或被暂停)
+sigchld_handler:当子进程终止或暂停时，内核会向父进程发送 SIGCHLD。该函数负责在后台静默清理这些进程，回收资源
+sigint_handler & sigtstp_handler:当用户在终端按下 ctrl-c 或 ctrl-z 时，拦截内核发给 Shell 的信号，并精准转发给当前正在运行的前台作业
+
