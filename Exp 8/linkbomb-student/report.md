@@ -1,13 +1,8 @@
 ## 快速开始
 
-```bash
-# 第一步：运行初始化，输入你的6位学号
-python3 init_bomb.py
-
-# 或者直接指定学号：
+```
 python3 init_bomb.py 202401
 
-# 第二步：开始拆解 Level 1
 cd level1
 ar -x bomb1.a          # 解包炸弹
 gcc -shared -o libbomb.so lv1.o   # 尝试直接转换
